@@ -5,15 +5,14 @@ A lightweight system to log, track, and triage production incidents. Built for t
 ## Architecture
 
 * **Frontend:** React.js, Vite, Material UI
-* **Backend:** FastAPI, Python, PyODBC
-* **Database:** SQL Server
+* **Backend:** FastAPI, Python, `sqlite3`
+* **Database:** SQLite (Chosen as per the email update allowing any SQL database)
 
 ## Setup Instructions
 
 ### 1. Database Setup
-1. You need a running SQL Server instance.
-2. Run the `db/schema.sql` script on your SQL Server to create the `IncidentTracker` database and the `Incidents` table.
-3. Update the `backend/.env` file with your SQL Server connection details.
+1. The application uses **SQLite** for simplicity and ease of setup.
+2. You do not need to run any external SQL scripts. The database file (`incident_tracker.db`) and the required tables (`Incidents` and `incident_audit_log`) will be **automatically created** the first time you run the backend server.
 
 ### 2. Backend Setup
 1. Navigate to the `backend` directory.
@@ -47,8 +46,9 @@ A lightweight system to log, track, and triage production incidents. Built for t
 ## Features Implemented
 * **Phase 1: Core API & Database** (Data Model, CRUD API, Status Transitions, Filtering & Sorting, Validation)
 * **Phase 2: React.js Frontend** (Dashboard list, Filters, Create Incident form, Incident Detail view, Status Actions)
+* **Phase 3: Stretch Goal - Audit Log** (Tracks and displays a timeline of all status changes for an incident)
 
 ## Trade-offs & Future Improvements
-* **Database Driver:** Used raw `pyodbc` as requested, but in a production environment, an ORM like SQLAlchemy with Alembic for migrations would be preferred for maintainability.
-* **State Management:** Used React local state and Axios for simplicity. In a larger app, React Query or Redux might be better for caching and global state.
-* **Authentication:** Currently there is no auth. We'd want to add JWT authentication and user roles.
+* **Database Choice:** Leveraged SQLite for zero-configuration local testing as permitted by the instructions. In a production environment, PostgreSQL or SQL Server with an ORM like SQLAlchemy and Alembic for migrations would be preferred.
+* **State Management:** Used React local state and Axios for simplicity. In a larger app, React Query or Redux might be better for caching and global state management.
+* **Authentication:** Currently there is no auth. We'd want to add JWT authentication and restrict status transitions based on user roles.
