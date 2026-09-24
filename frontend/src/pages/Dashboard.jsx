@@ -41,13 +41,45 @@ export default function Dashboard() {
   useEffect(() => {
     fetchIncidents();
     
-    const ws = new WebSocket('ws://localhost:8000/ws/incidents');
-    ws.onmessage = (event) => {
-      if (event.data === 'update') {
-        fetchIncidents();
-      }
+    let ws;
+    let reconnectTimer;
+    let isMounted = true;
+
+    const connectWebSocket = () => {
+      console.log("Attempting WebSocket connection...");
+      ws = new WebSocket('ws://localhost:8000/ws/incidents');
+      
+      ws.onopen = () => {
+        console.log("WebSocket connected successfully!");
+      };
+      
+      ws.onmessage = (event) => {
+        console.log("WebSocket message received:", event.data);
+        if (event.data === 'update') {
+          fetchIncidents();
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected.");
+        if (isMounted) {
+          // Auto-reconnect after 2 seconds
+          reconnectTimer = setTimeout(connectWebSocket, 2000);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
     };
-    return () => ws.close();
+
+    connectWebSocket();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    };
   }, [statusFilter, severityFilter, page, sortBy, order]);
 
   const severityColor = (severity) => {
