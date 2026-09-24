@@ -124,7 +124,7 @@ def test_pagination():
     
     res = client.get("/incidents?page=2&page_size=10")
     assert res.status_code == 200
-    assert len(res.json()["data"]) > 0
+    assert len(res.json()["data"]) == 2
 
 def test_analytics():
     client.post("/incidents", json={"title": "Analytic Test", "severity": "High", "reported_by": "User"})

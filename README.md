@@ -18,8 +18,13 @@ A lightweight system to log, track, and triage production incidents. Built for t
 1. Navigate to the `backend` directory.
 2. Create and activate a virtual environment:
    ```bash
+   # Windows
    python -m venv venv
    .\venv\Scripts\activate
+   
+   # Mac/Linux
+   python3 -m venv venv
+   source venv/bin/activate
    ```
 3. Install dependencies:
    ```bash
