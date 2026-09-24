@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+venv/
+.env
+incident_tracker.db
+
+# React / Node
+node_modules/
+dist/
+.env.local
+
+# OS
+.DS_Store
