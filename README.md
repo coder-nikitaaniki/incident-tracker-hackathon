@@ -6,7 +6,7 @@ A lightweight system to log, track, and triage production incidents. Built for t
 
 * **Frontend:** React.js, Vite, Material UI
 * **Backend:** FastAPI, Python (Requires Python 3.11+)
-* **Database:** SQLite (Chosen as per the email update allowing any SQL database)
+* **Database:** SQLite (The implementation uses SQLite based on the updated interview instructions, which allow candidates to choose any SQL database for the backend.)
 
 ## Setup Instructions
 
