@@ -13,6 +13,7 @@ A lightweight system to log, track, and triage production incidents. Built for t
 ### 1. Database Setup
 1. The application uses **SQLite** for zero-configuration testing.
 2. The database file (`incident_tracker.db`) is generated automatically. It utilizes `PRAGMA foreign_keys = ON` and `ON DELETE CASCADE` to keep audit logs clean upon incident deletion.
+3. As required, the raw SQL schema script is provided in `db/schema.sql` for your reference.
 
 ### 2. Backend Setup
 1. Navigate to the `backend` directory.
