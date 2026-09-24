@@ -1,5 +1,6 @@
-fastapi
-uvicorn
-pyodbc
-pydantic
-python-dotenv
+fastapi==0.110.0
+uvicorn==0.27.1
+pydantic==2.6.3
+websockets==12.0
+pytest==8.0.2
+httpx==0.27.0

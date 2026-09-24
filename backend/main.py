@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, status, Query, Path, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, status, Query, Path, WebSocket, WebSocketDisconnect, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from schemas import IncidentCreate, IncidentUpdate, IncidentStatusUpdate, IncidentOut
 from database import get_db_connection
-import json
+from datetime import datetime, timezone
 
 app = FastAPI(title="Incident Tracker API")
 
@@ -15,6 +17,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Error Handlers ---
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    error_msg = ", ".join([f"{err['loc'][-1]}: {err['msg']}" for err in errors])
+    return JSONResponse(
+        status_code=422,
+        content={"success": False, "error": error_msg},
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": exc.detail},
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "Internal Server Error"},
+    )
+
+# --- WebSockets ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -31,7 +58,7 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -41,7 +68,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
@@ -50,27 +77,32 @@ def row_to_dict(cursor, row):
         return None
     return dict(row)
 
-@app.post("/incidents", response_model=dict, status_code=status.HTTP_201_CREATED)
+def get_utc_now():
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+# --- Routes ---
+@app.post("/incidents", status_code=status.HTTP_201_CREATED)
 async def create_incident(incident: IncidentCreate):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection error")
     
     cursor = conn.cursor()
+    now = get_utc_now()
     query = """
-    INSERT INTO Incidents (title, description, severity, status, reported_by)
-    VALUES (?, ?, ?, 'Open', ?)
+    INSERT INTO Incidents (title, description, severity, status, reported_by, assigned_to, created_at, updated_at)
+    VALUES (?, ?, ?, 'Open', ?, ?, ?, ?)
     RETURNING *
     """
     try:
-        cursor.execute(query, (incident.title, incident.description, incident.severity, incident.reported_by))
+        cursor.execute(query, (incident.title, incident.description, incident.severity, incident.reported_by, incident.assigned_to, now, now))
         row = cursor.fetchone()
         created_incident = row_to_dict(cursor, row)
         
         cursor.execute('''
-            INSERT INTO incident_audit_log (incident_id, old_status, new_status, actor)
-            VALUES (?, NULL, 'Open', ?)
-        ''', (created_incident['id'], incident.reported_by))
+            INSERT INTO incident_audit_log (incident_id, old_status, new_status, actor, changed_at)
+            VALUES (?, NULL, 'Open', ?, ?)
+        ''', (created_incident['id'], incident.reported_by, now))
         conn.commit()
         
         await manager.broadcast("update")
@@ -81,7 +113,7 @@ async def create_incident(incident: IncidentCreate):
     finally:
         conn.close()
 
-@app.get("/incidents", response_model=dict)
+@app.get("/incidents")
 def get_incidents(
     status: Optional[str] = None,
     severity: Optional[str] = None,
@@ -112,8 +144,21 @@ def get_incidents(
     cursor.execute(f"SELECT COUNT(*) {base_query}", params)
     total_records = cursor.fetchone()[0]
 
-    order_col = "created_at" if sort_by == "created_at" else "severity"
     order_dir = "ASC" if order.lower() == "asc" else "DESC"
+    if sort_by == "severity":
+        # Logical sort for severity
+        order_col = """
+            CASE severity 
+                WHEN 'Critical' THEN 1 
+                WHEN 'High' THEN 2 
+                WHEN 'Medium' THEN 3 
+                WHEN 'Low' THEN 4 
+                ELSE 5 
+            END
+        """
+    else:
+        order_col = "created_at"
+        
     query = f"SELECT * {base_query} ORDER BY {order_col} {order_dir} LIMIT ? OFFSET ?"
     
     params.append(page_size)
@@ -124,6 +169,7 @@ def get_incidents(
         rows = cursor.fetchall()
         incidents = [row_to_dict(cursor, row) for row in rows]
         return {
+            "success": True,
             "data": incidents,
             "total": total_records,
             "page": page,
@@ -134,7 +180,7 @@ def get_incidents(
     finally:
         conn.close()
 
-@app.get("/incidents/analytics", response_model=dict)
+@app.get("/incidents/analytics")
 def get_analytics():
     conn = get_db_connection()
     if not conn:
@@ -159,17 +205,20 @@ def get_analytics():
         avg_resolution_hours = round(avg_res[0], 2) if avg_res and avg_res[0] else 0
 
         return {
-            "severity_counts": severity_counts,
-            "status_counts": status_counts,
-            "daily_counts": daily_counts,
-            "avg_resolution_hours": avg_resolution_hours
+            "success": True,
+            "data": {
+                "severity_counts": severity_counts,
+                "status_counts": status_counts,
+                "daily_counts": daily_counts,
+                "avg_resolution_hours": avg_resolution_hours
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
 
-@app.get("/incidents/{incident_id}", response_model=IncidentOut)
+@app.get("/incidents/{incident_id}")
 def get_incident(incident_id: int = Path(...)):
     conn = get_db_connection()
     if not conn:
@@ -182,7 +231,7 @@ def get_incident(incident_id: int = Path(...)):
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Incident not found")
-        return row_to_dict(cursor, row)
+        return {"success": True, "data": row_to_dict(cursor, row)}
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -190,7 +239,38 @@ def get_incident(incident_id: int = Path(...)):
     finally:
         conn.close()
 
-@app.patch("/incidents/{incident_id}/status", response_model=dict)
+@app.put("/incidents/{incident_id}")
+async def update_incident(incident_id: int, incident: IncidentUpdate):
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection error")
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM Incidents WHERE id = ?", (incident_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    now = get_utc_now()
+    query = """
+    UPDATE Incidents 
+    SET title = ?, description = ?, severity = ?, assigned_to = ?, updated_at = ?
+    WHERE id = ?
+    RETURNING *
+    """
+    try:
+        cursor.execute(query, (incident.title, incident.description, incident.severity, incident.assigned_to, now, incident_id))
+        row = cursor.fetchone()
+        conn.commit()
+        await manager.broadcast("update")
+        return {"success": True, "data": row_to_dict(cursor, row)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+@app.patch("/incidents/{incident_id}/status")
 async def update_status(incident_id: int, status_update: IncidentStatusUpdate):
     conn = get_db_connection()
     if not conn:
@@ -220,14 +300,15 @@ async def update_status(incident_id: int, status_update: IncidentStatusUpdate):
             detail=f"Invalid transition: {current_status} -> {new_status}"
         )
         
-    query = "UPDATE Incidents SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    now = get_utc_now()
+    query = "UPDATE Incidents SET status = ?, updated_at = ? WHERE id = ?"
     try:
-        cursor.execute(query, (new_status, incident_id))
+        cursor.execute(query, (new_status, now, incident_id))
         
         cursor.execute('''
-            INSERT INTO incident_audit_log (incident_id, old_status, new_status, actor)
-            VALUES (?, ?, ?, ?)
-        ''', (incident_id, current_status, new_status, 'System User'))
+            INSERT INTO incident_audit_log (incident_id, old_status, new_status, actor, changed_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (incident_id, current_status, new_status, status_update.actor, now))
         
         conn.commit()
         await manager.broadcast("update")
@@ -238,7 +319,7 @@ async def update_status(incident_id: int, status_update: IncidentStatusUpdate):
     finally:
         conn.close()
 
-@app.delete("/incidents/{incident_id}", response_model=dict)
+@app.delete("/incidents/{incident_id}")
 async def delete_incident(incident_id: int):
     conn = get_db_connection()
     if not conn:
@@ -261,7 +342,7 @@ async def delete_incident(incident_id: int):
     finally:
         conn.close()
 
-@app.get("/incidents/{incident_id}/audit-log", response_model=List[dict])
+@app.get("/incidents/{incident_id}/audit-log")
 def get_incident_audit_log(incident_id: int):
     conn = get_db_connection()
     if not conn:
@@ -272,7 +353,7 @@ def get_incident_audit_log(incident_id: int):
     try:
         cursor.execute(query, (incident_id,))
         rows = cursor.fetchall()
-        return [row_to_dict(cursor, row) for row in rows]
+        return {"success": True, "data": [row_to_dict(cursor, row) for row in rows]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:

@@ -1,45 +1,44 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
-class IncidentCreate(BaseModel):
-    title: str = Field(..., max_length=200)
+class IncidentBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200, json_schema_extra={"strip_whitespace": True})
     description: Optional[str] = None
     severity: str
-    reported_by: str
-
-    @validator('severity')
-    def validate_severity(cls, v):
-        allowed = ['Low', 'Medium', 'High', 'Critical']
-        if v not in allowed:
-            raise ValueError(f'severity must be one of {allowed}')
-        return v
-
-class IncidentUpdate(BaseModel):
-    title: Optional[str] = Field(None, max_length=200)
-    description: Optional[str] = None
-    severity: Optional[str] = None
     assigned_to: Optional[str] = None
 
-    @validator('severity')
-    def validate_severity(cls, v):
-        if v is None:
-            return v
-        allowed = ['Low', 'Medium', 'High', 'Critical']
+    @field_validator('title')
+    @classmethod
+    def title_must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Title cannot be empty or just spaces')
+        return v.strip()
+
+    @field_validator('severity')
+    @classmethod
+    def severity_must_be_valid(cls, v):
+        allowed = ["Critical", "High", "Medium", "Low"]
         if v not in allowed:
-            raise ValueError(f'severity must be one of {allowed}')
+            raise ValueError(f"Severity must be one of {allowed}")
         return v
+
+class IncidentCreate(IncidentBase):
+    reported_by: str = Field(..., min_length=1, json_schema_extra={"strip_whitespace": True})
+
+class IncidentUpdate(IncidentBase):
+    pass
 
 class IncidentStatusUpdate(BaseModel):
     status: str
+    actor: str = Field(default="System User")
 
-class IncidentOut(BaseModel):
+class IncidentOut(IncidentBase):
     id: int
-    title: str
-    description: Optional[str] = None
-    severity: str
     status: str
     reported_by: str
-    assigned_to: Optional[str] = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

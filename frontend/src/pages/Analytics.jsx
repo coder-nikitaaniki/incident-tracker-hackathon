@@ -13,7 +13,7 @@ export default function Analytics() {
     const fetchAnalytics = async () => {
       try {
         const res = await axios.get('http://localhost:8000/incidents/analytics');
-        setData(res.data);
+        setData(res.data.data); // Fixed: unpacking wrapped success response
       } catch (err) {
         console.error("Failed to fetch analytics", err);
       } finally {
@@ -37,7 +37,7 @@ export default function Analytics() {
       
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
+          <Paper sx={{ p: 3, textAlign: 'center', height: '100%' }}>
             <Typography variant="h6" color="text.secondary">Avg Resolution Time</Typography>
             <Typography variant="h3" color="primary">{data.avg_resolution_hours} hrs</Typography>
             <Typography variant="body2" color="text.secondary">For closed incidents</Typography>

@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  Paper, Typography, Box, Button, Chip, Divider, CircularProgress
-} from '@mui/material';
+import { Typography, Box, Paper, Button, Divider, CircularProgress } from '@mui/material';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import local from 'dayjs/plugin/timezone';
+import IncidentForm from '../components/IncidentForm';
+
+dayjs.extend(utc);
+dayjs.extend(local);
 
 export default function IncidentDetail() {
   const { id } = useParams();
@@ -13,14 +17,15 @@ export default function IncidentDetail() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const fetchIncident = async () => {
     try {
       const response = await axios.get(`http://localhost:8000/incidents/${id}`);
-      setIncident(response.data);
+      setIncident(response.data.data);
       
       const logsResponse = await axios.get(`http://localhost:8000/incidents/${id}/audit-log`);
-      setAuditLogs(logsResponse.data);
+      setAuditLogs(logsResponse.data.data);
       
       setLoading(false);
     } catch (err) {
@@ -35,58 +40,78 @@ export default function IncidentDetail() {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      await axios.patch(`http://localhost:8000/incidents/${id}/status`, { status: newStatus });
+      // Hardcoded 'Current User' as actor for now, could be dynamic
+      await axios.patch(`http://localhost:8000/incidents/${id}/status`, { 
+        status: newStatus,
+        actor: "Current User" 
+      });
       fetchIncident();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to update status');
+      alert("Error updating status: " + (err.response?.data?.error || "Unknown error"));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm("Are you sure you want to delete this incident?")) {
+      try {
+        await axios.delete(`http://localhost:8000/incidents/${id}`);
+        navigate('/');
+      } catch (err) {
+        alert("Error deleting: " + (err.response?.data?.error || "Unknown error"));
+      }
     }
   };
 
   if (loading) return <CircularProgress />;
-  if (error) return <Typography color="error">{error}</Typography>;
-  if (!incident) return <Typography>Incident not found</Typography>;
+  if (error || !incident) return <Typography color="error">{error || 'Not found'}</Typography>;
 
-  const getNextStatusOptions = (current) => {
-    switch(current) {
-      case 'Open': return ['Investigating'];
-      case 'Investigating': return ['Resolved'];
-      case 'Resolved': return ['Closed'];
-      default: return [];
-    }
+  const getNextValidStatuses = (current) => {
+    const transitions = {
+      "Open": ["Investigating"],
+      "Investigating": ["Resolved"],
+      "Resolved": ["Closed"],
+      "Closed": []
+    };
+    return transitions[current] || [];
   };
 
-  const nextStatuses = getNextStatusOptions(incident.status);
+  const nextStatuses = getNextValidStatuses(incident.status);
 
   return (
     <Paper sx={{ p: 4 }}>
-      <Button onClick={() => navigate('/')} sx={{ mb: 2 }}>&larr; Back to Dashboard</Button>
+      <Button onClick={() => navigate('/')} sx={{ mb: 2 }}>
+        &larr; Back to Dashboard
+      </Button>
       
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Typography variant="h4" gutterBottom>{incident.title}</Typography>
-        <Chip label={incident.status} color={incident.status === 'Closed' ? 'default' : 'primary'} />
+        <Box>
+          <Typography variant="h4" gutterBottom>{incident.title}</Typography>
+          <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+            ID: #{incident.id} &nbsp;|&nbsp; Reported by: {incident.reported_by} &nbsp;|&nbsp; Assigned to: {incident.assigned_to || 'Unassigned'}
+          </Typography>
+          <Typography variant="subtitle2" color="text.secondary">
+            Created: {dayjs(incident.created_at).local().format('MMM D, YYYY h:mm A')}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" size="small" onClick={() => setIsEditOpen(true)}>Edit</Button>
+          <Button variant="outlined" color="error" size="small" onClick={handleDelete}>Delete</Button>
+        </Box>
       </Box>
-      
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-        <Typography variant="body2" color="text.secondary">
-          ID: #{incident.id}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Reported by: {incident.reported_by}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Created: {dayjs(incident.created_at).format('MMM D, YYYY h:mm A')}
+
+      <Divider sx={{ my: 3 }} />
+
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h6" gutterBottom>Description</Typography>
+        <Typography variant="body1">
+          {incident.description || 'No description provided.'}
         </Typography>
       </Box>
 
-      <Typography variant="h6" gutterBottom>Description</Typography>
-      <Typography variant="body1" paragraph>
-        {incident.description || 'No description provided.'}
-      </Typography>
-      
       <Divider sx={{ my: 3 }} />
 
       <Box>
-        <Typography variant="h6" gutterBottom>Actions</Typography>
+        <Typography variant="h6" gutterBottom>Actions (Current Status: {incident.status})</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
           {nextStatuses.map(status => (
             <Button 
@@ -99,7 +124,7 @@ export default function IncidentDetail() {
           ))}
           {nextStatuses.length === 0 && (
             <Typography variant="body2" color="text.secondary">
-              No further actions available.
+              No further status actions available.
             </Typography>
           )}
         </Box>
@@ -114,7 +139,7 @@ export default function IncidentDetail() {
             {auditLogs.map(log => (
               <Box key={log.id} sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
-                  {dayjs(log.changed_at).format('MMM D, YYYY h:mm A')} by {log.actor}
+                  {dayjs(log.changed_at).local().format('MMM D, YYYY h:mm A')} by {log.actor}
                 </Typography>
                 <Typography variant="body1">
                   Status changed {log.old_status ? `from ${log.old_status} ` : ''}to <strong>{log.new_status}</strong>
@@ -124,10 +149,20 @@ export default function IncidentDetail() {
           </Box>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            No audit logs available. (Only new updates will be tracked).
+            No audit logs available.
           </Typography>
         )}
       </Box>
+
+      <IncidentForm 
+        open={isEditOpen} 
+        onClose={() => setIsEditOpen(false)} 
+        onSuccess={() => {
+          setIsEditOpen(false);
+          fetchIncident();
+        }}
+        initialData={incident}
+      />
     </Paper>
   );
 }

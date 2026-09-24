@@ -6,7 +6,12 @@ import {
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import local from 'dayjs/plugin/timezone';
 import IncidentForm from '../components/IncidentForm';
+
+dayjs.extend(utc);
+dayjs.extend(local);
 
 export default function Dashboard() {
   const [incidents, setIncidents] = useState([]);
@@ -14,12 +19,14 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [order, setOrder] = useState('desc');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const navigate = useNavigate();
 
   const fetchIncidents = async () => {
     try {
-      let url = `http://localhost:8000/incidents?page=${page}&page_size=10`;
+      let url = `http://localhost:8000/incidents?page=${page}&page_size=10&sort_by=${sortBy}&order=${order}`;
       if (statusFilter) url += `&status=${statusFilter}`;
       if (severityFilter) url += `&severity=${severityFilter}`;
       
@@ -34,7 +41,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchIncidents();
     
-    // Real-time updates via WebSockets
     const ws = new WebSocket('ws://localhost:8000/ws/incidents');
     ws.onmessage = (event) => {
       if (event.data === 'update') {
@@ -42,7 +48,7 @@ export default function Dashboard() {
       }
     };
     return () => ws.close();
-  }, [statusFilter, severityFilter, page]);
+  }, [statusFilter, severityFilter, page, sortBy, order]);
 
   const severityColor = (severity) => {
     switch(severity) {
@@ -56,15 +62,11 @@ export default function Dashboard() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', mb: 3, gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Status</InputLabel>
-            <Select
-              value={statusFilter}
-              label="Status"
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            >
+            <Select value={statusFilter} label="Status" onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
               <MenuItem value="">All</MenuItem>
               <MenuItem value="Open">Open</MenuItem>
               <MenuItem value="Investigating">Investigating</MenuItem>
@@ -74,11 +76,7 @@ export default function Dashboard() {
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Severity</InputLabel>
-            <Select
-              value={severityFilter}
-              label="Severity"
-              onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
-            >
+            <Select value={severityFilter} label="Severity" onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}>
               <MenuItem value="">All</MenuItem>
               <MenuItem value="Critical">Critical</MenuItem>
               <MenuItem value="High">High</MenuItem>
@@ -86,10 +84,24 @@ export default function Dashboard() {
               <MenuItem value="Low">Low</MenuItem>
             </Select>
           </FormControl>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Sort By</InputLabel>
+            <Select value={sortBy} label="Sort By" onChange={(e) => { setSortBy(e.target.value); setPage(1); }}>
+              <MenuItem value="created_at">Date Created</MenuItem>
+              <MenuItem value="severity">Severity</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Order</InputLabel>
+            <Select value={order} label="Order" onChange={(e) => { setOrder(e.target.value); setPage(1); }}>
+              <MenuItem value="desc">Descending</MenuItem>
+              <MenuItem value="asc">Ascending</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button variant="outlined" onClick={() => navigate('/analytics')}>
-            View Analytics
+            Analytics
           </Button>
           <Button variant="contained" onClick={() => setIsFormOpen(true)}>
             Report Incident
@@ -105,6 +117,7 @@ export default function Dashboard() {
               <TableCell>Severity</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Reported By</TableCell>
+              <TableCell>Assigned To</TableCell>
               <TableCell>Created At</TableCell>
             </TableRow>
           </TableHead>
@@ -122,12 +135,13 @@ export default function Dashboard() {
                 </TableCell>
                 <TableCell>{incident.status}</TableCell>
                 <TableCell>{incident.reported_by}</TableCell>
-                <TableCell>{dayjs(incident.created_at).format('MMM D, YYYY h:mm A')}</TableCell>
+                <TableCell>{incident.assigned_to || '-'}</TableCell>
+                <TableCell>{dayjs(incident.created_at).local().format('MMM D, YYYY h:mm A')}</TableCell>
               </TableRow>
             ))}
             {incidents.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} align="center">No incidents found</TableCell>
+                <TableCell colSpan={6} align="center">No incidents found</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -150,7 +164,6 @@ export default function Dashboard() {
         onClose={() => setIsFormOpen(false)} 
         onSuccess={() => {
           setIsFormOpen(false);
-          // fetchIncidents is handled by websocket broadcast, but we can call it just in case
           fetchIncidents();
         }}
       />
