@@ -17,8 +17,8 @@ export default function Dashboard() {
   const [incidents, setIncidents] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [severityFilter, setSeverityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [severityFilter, setSeverityFilter] = useState('All');
   const [sortBy, setSortBy] = useState('created_at');
   const [order, setOrder] = useState('desc');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -27,8 +27,8 @@ export default function Dashboard() {
   const fetchIncidents = async () => {
     try {
       let url = `http://localhost:8000/incidents?page=${page}&page_size=10&sort_by=${sortBy}&order=${order}`;
-      if (statusFilter) url += `&status=${statusFilter}`;
-      if (severityFilter) url += `&severity=${severityFilter}`;
+      if (statusFilter && statusFilter !== 'All') url += `&status=${statusFilter}`;
+      if (severityFilter && severityFilter !== 'All') url += `&severity=${severityFilter}`;
       
       const response = await axios.get(url);
       setIncidents(response.data.data);
@@ -99,7 +99,7 @@ export default function Dashboard() {
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Status</InputLabel>
             <Select value={statusFilter} label="Status" onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-              <MenuItem value="">All</MenuItem>
+              <MenuItem value="All">All</MenuItem>
               <MenuItem value="Open">Open</MenuItem>
               <MenuItem value="Investigating">Investigating</MenuItem>
               <MenuItem value="Resolved">Resolved</MenuItem>
@@ -109,7 +109,7 @@ export default function Dashboard() {
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Severity</InputLabel>
             <Select value={severityFilter} label="Severity" onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}>
-              <MenuItem value="">All</MenuItem>
+              <MenuItem value="All">All</MenuItem>
               <MenuItem value="Critical">Critical</MenuItem>
               <MenuItem value="High">High</MenuItem>
               <MenuItem value="Medium">Medium</MenuItem>
