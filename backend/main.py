@@ -149,11 +149,11 @@ def get_incidents(
         # Logical sort for severity
         order_col = """
             CASE severity 
-                WHEN 'Critical' THEN 1 
-                WHEN 'High' THEN 2 
-                WHEN 'Medium' THEN 3 
-                WHEN 'Low' THEN 4 
-                ELSE 5 
+                WHEN 'Critical' THEN 4 
+                WHEN 'High' THEN 3 
+                WHEN 'Medium' THEN 2 
+                WHEN 'Low' THEN 1 
+                ELSE 0 
             END
         """
     else:

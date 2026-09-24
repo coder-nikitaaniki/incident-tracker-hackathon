@@ -5,14 +5,14 @@ A lightweight system to log, track, and triage production incidents. Built for t
 ## Architecture
 
 * **Frontend:** React.js, Vite, Material UI
-* **Backend:** FastAPI, Python, `sqlite3`
+* **Backend:** FastAPI, Python (Requires Python 3.11+)
 * **Database:** SQLite (Chosen as per the email update allowing any SQL database)
 
 ## Setup Instructions
 
 ### 1. Database Setup
-1. The application uses **SQLite** for simplicity and ease of setup.
-2. You do not need to run any external SQL scripts. The database file (`incident_tracker.db`) and the required tables (`Incidents` and `incident_audit_log`) will be **automatically created** the first time you run the backend server.
+1. The application uses **SQLite** for zero-configuration testing.
+2. The database file (`incident_tracker.db`) is generated automatically. It utilizes `PRAGMA foreign_keys = ON` and `ON DELETE CASCADE` to keep audit logs clean upon incident deletion.
 
 ### 2. Backend Setup
 1. Navigate to the `backend` directory.
@@ -33,22 +33,34 @@ A lightweight system to log, track, and triage production incidents. Built for t
 
 ### 3. Frontend Setup
 1. Navigate to the `frontend` directory.
-2. Install dependencies (if not already done):
+2. Install dependencies:
    ```bash
    npm install
    ```
-3. Start the Vite development server:
+3. Start the Vite server:
    ```bash
    npm run dev
    ```
    The frontend will be running at `http://localhost:5173`.
 
+### 4. Running Tests
+The backend contains a comprehensive test suite that runs against an isolated, automatically-cleaned temporary SQLite database.
+1. From the `backend` directory, run:
+   ```bash
+   pytest
+   ```
+
 ## Features Implemented
-* **Phase 1: Core API & Database** (Data Model, CRUD API, Status Transitions, Filtering & Sorting, Validation)
-* **Phase 2: React.js Frontend** (Dashboard list, Filters, Create Incident form, Incident Detail view, Status Actions)
-* **Phase 3: Stretch Goal - Audit Log** (Tracks and displays a timeline of all status changes for an incident)
+* **Phase 1: Core API & Database:** Full CRUD (including PUT updates), Strict Status Transitions, Dynamic Filtering & Custom Severity Sorting, Input Validation (Custom 422 JSON format). Database features Table Indexes and Cascade Deletes.
+* **Phase 2: React.js Frontend:** Dashboard list, Filters & Sort controls, Create/Edit Incident forms, Detail view, and Status Actions.
+* **Phase 3: Stretch Goals (100% Completed)**
+  * **3.1 Analytics Endpoint:** Data aggregation for severity, status, daily counts, and exact average resolution time using audit logs.
+  * **3.2 Audit Log:** Complete timeline tracking of status changes and actors.
+  * **3.3 Pagination:** Server-side pagination supported seamlessly on the UI.
+  * **3.4 Tests:** Comprehensive `pytest` coverage for logic, filters, errors, and transitions.
+  * **3.5 Real-time Updates:** FastAPI WebSockets immediately refresh the React UI upon any incident update.
 
 ## Trade-offs & Future Improvements
-* **Database Choice:** Leveraged SQLite for zero-configuration local testing as permitted by the instructions. In a production environment, PostgreSQL or SQL Server with an ORM like SQLAlchemy and Alembic for migrations would be preferred.
-* **State Management:** Used React local state and Axios for simplicity. In a larger app, React Query or Redux might be better for caching and global state management.
-* **Authentication:** Currently there is no auth. We'd want to add JWT authentication and restrict status transitions based on user roles.
+* **Database Choice:** SQLite was preferred for simplicity. In production, PostgreSQL with SQLAlchemy/Alembic would be ideal.
+* **Authentication:** Currently there is no auth. "Current User" is hardcoded on the UI for status updates. Adding JWT would properly resolve user attribution.
+* **Hardcoded Environments:** `http://localhost:8000` is hardcoded in the frontend for ease of running this hackathon locally. A production app would use `import.meta.env.VITE_API_URL`.

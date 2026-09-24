@@ -117,3 +117,18 @@ def test_status_transitions():
     
     get_res = client.get(f"/incidents/{incident_id}")
     assert get_res.json()["data"]["status"] == "Closed"
+
+def test_pagination():
+    for i in range(12):
+        client.post("/incidents", json={"title": f"Pagination {i}", "severity": "Low", "reported_by": "User"})
+    
+    res = client.get("/incidents?page=2&page_size=10")
+    assert res.status_code == 200
+    assert len(res.json()["data"]) > 0
+
+def test_analytics():
+    client.post("/incidents", json={"title": "Analytic Test", "severity": "High", "reported_by": "User"})
+    res = client.get("/incidents/analytics")
+    assert res.status_code == 200
+    assert "data" in res.json()
+    assert "avg_resolution_hours" in res.json()["data"]

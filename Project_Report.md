@@ -11,55 +11,40 @@ The Incident Tracker is a lightweight, responsive system designed to log, track,
 
 ---
 
-## 2. Requirements Checklist (What is Done vs. What is Not Done)
+## 2. Requirements Checklist
 
 ### ✅ Phase 1: Core API & Database (100% Completed)
-- **Data Model:** Designed relational database schema with correct types and constraints.
-- **CRUD API:** Developed full RESTful API using FastAPI for Create, Read, Update, and Delete operations.
+- **Data Model:** Designed relational database schema with correct types, `CHECK` constraints, `CREATE INDEX` statements for performance, and `ON DELETE CASCADE` for referential integrity.
+- **CRUD API:** Developed full RESTful API (POST, GET, PUT, DELETE, PATCH).
 - **Status Transitions:** Enforced strict lifecycle (`Open` -> `Investigating` -> `Resolved` -> `Closed`). Returns `400 Bad Request` for invalid moves.
-- **Filtering & Sorting:** API supports filtering by status and severity, and sorts results by creation date.
-- **Validation:** Implemented strict input validation (e.g., maximum 200 characters for title, restricted severity values). Returns clear `422` error messages.
+- **Filtering & Sorting:** API supports filtering by status, severity, and assignment. Sorting dynamically handles severity correctly (Critical > High > Medium > Low).
+- **Validation:** Implemented strict input validation (e.g., maximum 200 characters, whitespace trimming). Custom Exception Handlers enforce the required `{"success": false, "error": "..."}` JSON format across 422 and 500 errors.
 
 ### ✅ Phase 2: React.js Frontend (100% Completed)
-- **Dashboard:** Created a clean table/list view using Material UI (MUI).
-- **Create Form:** Added a modal dialog to report new incidents easily.
-- **Detail View:** Implemented a dedicated view for individual incidents to see full descriptions and history.
-- **Filters:** Built UI controls for Status and Severity that trigger server-side filtering via API query params.
-- **Status Actions:** Built dynamic buttons that only allow valid status transitions (e.g., hiding the 'Investigating' button if the incident is already 'Resolved').
+- **Dashboard:** Created a clean table view using Material UI (MUI). Supports sorting and filtering controls dynamically fetching from the API.
+- **Forms:** Added forms to Report new incidents and Edit existing ones (including `assigned_to`).
+- **Detail View:** Dedicated view displaying incident info, severity, timeline history, and conditional status action buttons.
 
 ### 🚀 Phase 3: Stretch Goals (100% Completed for Bonus Credit)
-- ✅ **3.1 Analytics Endpoint:** Added an `/incidents/analytics` API that groups incidents by severity, status, and calculates avg resolution time. Displayed using a new "Analytics" page on the frontend with `recharts`.
-- ✅ **3.2 Audit Log:** Added an `incident_audit_log` table to record every status change with a timestamp and actor. Integrated into the Detail View to show a clear history timeline.
-- ✅ **3.3 Pagination:** Added `page` and `page_size` params to the list endpoint. The frontend dashboard now utilizes a Material UI `<Pagination>` control for seamless navigation.
-- ✅ **3.4 Tests:** Wrote a comprehensive `test_main.py` suite using `pytest`. The tests run on an isolated SQLite database (`test_incident_tracker.db`) which is cleaned up automatically. It covers Create, Read (single, list, filters, sort, pagination), Update (PUT), Delete (with Cascade verification), and strict valid/invalid status-transition checks including 400, 404, and 422 HTTP errors.
+- ✅ **3.1 Analytics Endpoint:** Added an `/incidents/analytics` API aggregating incidents. Accurately calculates average resolution time using Audit Log timestamps (unaffected by subsequent edits). Displayed using a new "Analytics" page with `recharts`.
+- ✅ **3.2 Audit Log:** Added an `incident_audit_log` table to record every status change. Integrated into the Detail View to show a clear history timeline.
+- ✅ **3.3 Pagination:** Added `page` and `page_size` (with an upper limit of 100) params to the list endpoint. The frontend dashboard utilizes an MUI `<Pagination>` control.
+- ✅ **3.4 Tests:** Wrote a comprehensive `test_main.py` suite using `pytest`. The tests run on an isolated SQLite database (`test_incident_tracker.db`) that cleans up automatically. It thoroughly covers Create, Read (single, list, filters, sort, pagination), Update (PUT), Delete (with Cascade verification), and strict valid/invalid status-transition checks including 400, 404, and 422 custom HTTP errors.
 - ✅ **3.5 Real-time Updates:** Integrated FastAPI WebSockets on `/ws/incidents`. The frontend connects to this websocket and automatically fetches the latest incidents instantly upon any creation or status update without requiring a manual refresh.
 
 ---
 
 ## 3. Architecture & Tech Stack
 - **Frontend:** React.js, Vite, Material UI (MUI), Axios, React Router.
-- **Backend:** FastAPI (Python), Pydantic (Data validation).
+- **Backend:** FastAPI (Python 3.11+), Pydantic v2 (Data validation).
 - **Database:** SQLite. 
   *(Note: As per the email update stating "You are free to choose any SQL database", SQLite was chosen over SQL Server to ensure zero-configuration, seamless local testing, and rapid development, while maintaining standard SQL relational architecture).*
 
 ---
 
-## 4. Database Schema Details
-1. **`Incidents` Table:**
-   - Primary data store for incidents.
-   - Utilizes `CHECK` constraints to ensure `status` and `severity` strictly adhere to the allowed enums at the database level.
-2. **`incident_audit_log` Table:**
-   - Tracks the history of status transitions.
-   - Uses a `FOREIGN KEY (incident_id)` referencing the `Incidents` table.
-
----
-
-## 5. Key Architecture Decisions & Trade-offs
-1. **Backend Validation vs Frontend Validation:**
-   - While the React frontend hides invalid status buttons, the core validation logic is heavily enforced on the backend. This ensures the API remains secure even if invoked via Postman or third-party clients.
-2. **Raw SQL vs ORM:**
-   - Raw SQL queries were used via Python's `sqlite3` driver to demonstrate proficiency in writing raw queries and to keep the setup lightweight. In a production scenario, an ORM like **SQLAlchemy** coupled with **Alembic** for migrations would be preferable for long-term maintainability.
-3. **State Management:**
-   - React's local state (`useState`, `useEffect`) was sufficient for this application's scope. For a larger-scale enterprise app, global state management like **Redux** or **React Query** (for data caching) would be implemented.
-4. **Authentication:**
-   - Currently, user names are inputted manually as strings. With more time, a proper **JWT-based Authentication** system would be added to accurately track the `actor` in the Audit Log and enforce role-based access control.
+## 4. Key Architecture Decisions & Trade-offs
+1. **Error Formatting:** Overrode FastAPI's default `RequestValidationError` to strictly map 422 responses into the required `{success: false, error: ...}` format for strict contract adherence.
+2. **Raw SQL vs ORM:** Raw SQL queries were used via Python's `sqlite3` driver. In a production scenario, an ORM like **SQLAlchemy** coupled with **Alembic** for migrations would be preferable for long-term maintainability.
+3. **Database Constraints & Optimization:** Added performance indexes (`CREATE INDEX`) to filterable columns (status, severity, assigned_to). Enabled `PRAGMA foreign_keys=ON` so deleting an incident automatically cleans up its audit logs.
+4. **Authentication (Trade-off):** Currently, there is no auth. "Current User" is hardcoded on the UI for status updates. Adding JWT authentication would be the next step to accurately track the `actor` and enforce role-based access control.
+5. **Environment Configuration (Trade-off):** `http://localhost:8000` is hardcoded in the Axios calls. While standard practice dictates using `.env` variables (`VITE_API_URL`), this was omitted to simplify immediate out-of-the-box local hackathon testing.

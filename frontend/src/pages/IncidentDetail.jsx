@@ -87,7 +87,7 @@ export default function IncidentDetail() {
         <Box>
           <Typography variant="h4" gutterBottom>{incident.title}</Typography>
           <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-            ID: #{incident.id} &nbsp;|&nbsp; Reported by: {incident.reported_by} &nbsp;|&nbsp; Assigned to: {incident.assigned_to || 'Unassigned'}
+            ID: #{incident.id} &nbsp;|&nbsp; Severity: <strong>{incident.severity}</strong> &nbsp;|&nbsp; Reported by: {incident.reported_by} &nbsp;|&nbsp; Assigned to: {incident.assigned_to || 'Unassigned'}
           </Typography>
           <Typography variant="subtitle2" color="text.secondary">
             Created: {dayjs(incident.created_at).local().format('MMM D, YYYY h:mm A')}
