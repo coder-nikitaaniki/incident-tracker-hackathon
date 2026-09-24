@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-  Button, Select, MenuItem, FormControl, InputLabel, Box, Chip
+  Button, Select, MenuItem, FormControl, InputLabel, Box, Chip, Pagination
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -10,6 +10,8 @@ import IncidentForm from '../components/IncidentForm';
 
 export default function Dashboard() {
   const [incidents, setIncidents] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -17,12 +19,13 @@ export default function Dashboard() {
 
   const fetchIncidents = async () => {
     try {
-      let url = 'http://localhost:8000/incidents?';
-      if (statusFilter) url += `status=${statusFilter}&`;
-      if (severityFilter) url += `severity=${severityFilter}&`;
+      let url = `http://localhost:8000/incidents?page=${page}&page_size=10`;
+      if (statusFilter) url += `&status=${statusFilter}`;
+      if (severityFilter) url += `&severity=${severityFilter}`;
       
       const response = await axios.get(url);
-      setIncidents(response.data);
+      setIncidents(response.data.data);
+      setTotal(response.data.total);
     } catch (error) {
       console.error("Error fetching incidents", error);
     }
@@ -30,7 +33,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchIncidents();
-  }, [statusFilter, severityFilter]);
+    
+    // Real-time updates via WebSockets
+    const ws = new WebSocket('ws://localhost:8000/ws/incidents');
+    ws.onmessage = (event) => {
+      if (event.data === 'update') {
+        fetchIncidents();
+      }
+    };
+    return () => ws.close();
+  }, [statusFilter, severityFilter, page]);
 
   const severityColor = (severity) => {
     switch(severity) {
@@ -51,7 +63,7 @@ export default function Dashboard() {
             <Select
               value={statusFilter}
               label="Status"
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             >
               <MenuItem value="">All</MenuItem>
               <MenuItem value="Open">Open</MenuItem>
@@ -65,7 +77,7 @@ export default function Dashboard() {
             <Select
               value={severityFilter}
               label="Severity"
-              onChange={(e) => setSeverityFilter(e.target.value)}
+              onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
             >
               <MenuItem value="">All</MenuItem>
               <MenuItem value="Critical">Critical</MenuItem>
@@ -75,9 +87,14 @@ export default function Dashboard() {
             </Select>
           </FormControl>
         </Box>
-        <Button variant="contained" onClick={() => setIsFormOpen(true)}>
-          Report Incident
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="outlined" onClick={() => navigate('/analytics')}>
+            View Analytics
+          </Button>
+          <Button variant="contained" onClick={() => setIsFormOpen(true)}>
+            Report Incident
+          </Button>
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
@@ -116,12 +133,24 @@ export default function Dashboard() {
           </TableBody>
         </Table>
       </TableContainer>
+      
+      {total > 10 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+          <Pagination 
+            count={Math.ceil(total / 10)} 
+            page={page} 
+            onChange={(e, value) => setPage(value)} 
+            color="primary" 
+          />
+        </Box>
+      )}
 
       <IncidentForm 
         open={isFormOpen} 
         onClose={() => setIsFormOpen(false)} 
         onSuccess={() => {
           setIsFormOpen(false);
+          // fetchIncidents is handled by websocket broadcast, but we can call it just in case
           fetchIncidents();
         }}
       />

@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, status, Query, Path
+from fastapi import FastAPI, HTTPException, status, Query, Path, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from schemas import IncidentCreate, IncidentUpdate, IncidentStatusUpdate, IncidentOut
 from database import get_db_connection
+import json
 
 app = FastAPI(title="Incident Tracker API")
 
@@ -14,13 +15,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except:
+                pass
+
+manager = ConnectionManager()
+
+@app.websocket("/ws/incidents")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
 def row_to_dict(cursor, row):
     if not row:
         return None
     return dict(row)
 
 @app.post("/incidents", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_incident(incident: IncidentCreate):
+async def create_incident(incident: IncidentCreate):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection error")
@@ -34,8 +65,6 @@ def create_incident(incident: IncidentCreate):
     try:
         cursor.execute(query, (incident.title, incident.description, incident.severity, incident.reported_by))
         row = cursor.fetchone()
-        conn.commit()
-        
         created_incident = row_to_dict(cursor, row)
         
         cursor.execute('''
@@ -44,51 +73,97 @@ def create_incident(incident: IncidentCreate):
         ''', (created_incident['id'], incident.reported_by))
         conn.commit()
         
-        return {
-            "success": True,
-            "data": created_incident
-        }
+        await manager.broadcast("update")
+        return {"success": True, "data": created_incident}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
 
-@app.get("/incidents", response_model=List[IncidentOut])
+@app.get("/incidents", response_model=dict)
 def get_incidents(
     status: Optional[str] = None,
     severity: Optional[str] = None,
     assigned_to: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", pattern="^(created_at|severity)$"),
-    order: Optional[str] = Query("desc", pattern="^(asc|desc)$")
+    order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1)
 ):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection error")
     
     cursor = conn.cursor()
-    query = "SELECT * FROM Incidents WHERE 1=1"
+    base_query = "FROM Incidents WHERE 1=1"
     params = []
     
     if status:
-        query += " AND status = ?"
+        base_query += " AND status = ?"
         params.append(status)
     if severity:
-        query += " AND severity = ?"
+        base_query += " AND severity = ?"
         params.append(severity)
     if assigned_to:
-        query += " AND assigned_to = ?"
+        base_query += " AND assigned_to = ?"
         params.append(assigned_to)
         
+    cursor.execute(f"SELECT COUNT(*) {base_query}", params)
+    total_records = cursor.fetchone()[0]
+
     order_col = "created_at" if sort_by == "created_at" else "severity"
     order_dir = "ASC" if order.lower() == "asc" else "DESC"
-    query += f" ORDER BY {order_col} {order_dir}"
+    query = f"SELECT * {base_query} ORDER BY {order_col} {order_dir} LIMIT ? OFFSET ?"
+    
+    params.append(page_size)
+    params.append((page - 1) * page_size)
     
     try:
         cursor.execute(query, params)
         rows = cursor.fetchall()
         incidents = [row_to_dict(cursor, row) for row in rows]
-        return incidents
+        return {
+            "data": incidents,
+            "total": total_records,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/incidents/analytics", response_model=dict)
+def get_analytics():
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection error")
+    
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT severity, COUNT(*) as count FROM Incidents GROUP BY severity")
+        severity_counts = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("SELECT status, COUNT(*) as count FROM Incidents GROUP BY status")
+        status_counts = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("SELECT date(created_at) as date, COUNT(*) as count FROM Incidents GROUP BY date(created_at) ORDER BY date(created_at) DESC LIMIT 7")
+        daily_counts = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT AVG((julianday(updated_at) - julianday(created_at)) * 24) as avg_hours
+            FROM Incidents WHERE status = 'Closed'
+        """)
+        avg_res = cursor.fetchone()
+        avg_resolution_hours = round(avg_res[0], 2) if avg_res and avg_res[0] else 0
+
+        return {
+            "severity_counts": severity_counts,
+            "status_counts": status_counts,
+            "daily_counts": daily_counts,
+            "avg_resolution_hours": avg_resolution_hours
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -115,56 +190,8 @@ def get_incident(incident_id: int = Path(...)):
     finally:
         conn.close()
 
-@app.put("/incidents/{incident_id}", response_model=dict)
-def update_incident(incident_id: int, incident: IncidentUpdate):
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection error")
-    
-    cursor = conn.cursor()
-    
-    # Check if exists
-    cursor.execute("SELECT id FROM Incidents WHERE id = ?", (incident_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Incident not found")
-        
-    update_fields = []
-    params = []
-    if incident.title is not None:
-        update_fields.append("title = ?")
-        params.append(incident.title)
-    if incident.description is not None:
-        update_fields.append("description = ?")
-        params.append(incident.description)
-    if incident.severity is not None:
-        update_fields.append("severity = ?")
-        params.append(incident.severity)
-    if incident.assigned_to is not None:
-        update_fields.append("assigned_to = ?")
-        params.append(incident.assigned_to)
-        
-    if not update_fields:
-        conn.close()
-        return {"success": True, "message": "No fields to update"}
-        
-    update_fields.append("updated_at = CURRENT_TIMESTAMP")
-    
-    query = f"UPDATE Incidents SET {', '.join(update_fields)} WHERE id = ?"
-    params.append(incident_id)
-    
-    try:
-        cursor.execute(query, params)
-        conn.commit()
-        return {"success": True, "message": "Incident updated"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        conn.close()
-
 @app.patch("/incidents/{incident_id}/status", response_model=dict)
-def update_status(incident_id: int, status_update: IncidentStatusUpdate):
+async def update_status(incident_id: int, status_update: IncidentStatusUpdate):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection error")
@@ -197,13 +224,13 @@ def update_status(incident_id: int, status_update: IncidentStatusUpdate):
     try:
         cursor.execute(query, (new_status, incident_id))
         
-        # Log the transition
         cursor.execute('''
             INSERT INTO incident_audit_log (incident_id, old_status, new_status, actor)
             VALUES (?, ?, ?, ?)
-        ''', (incident_id, current_status, new_status, 'System User')) # Hardcoded actor for now
+        ''', (incident_id, current_status, new_status, 'System User'))
         
         conn.commit()
+        await manager.broadcast("update")
         return {"success": True, "message": f"Status updated to {new_status}"}
     except Exception as e:
         conn.rollback()
@@ -212,7 +239,7 @@ def update_status(incident_id: int, status_update: IncidentStatusUpdate):
         conn.close()
 
 @app.delete("/incidents/{incident_id}", response_model=dict)
-def delete_incident(incident_id: int):
+async def delete_incident(incident_id: int):
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection error")
@@ -226,6 +253,7 @@ def delete_incident(incident_id: int):
     try:
         cursor.execute("DELETE FROM Incidents WHERE id = ?", (incident_id,))
         conn.commit()
+        await manager.broadcast("update")
         return {"success": True, "message": "Incident deleted"}
     except Exception as e:
         conn.rollback()

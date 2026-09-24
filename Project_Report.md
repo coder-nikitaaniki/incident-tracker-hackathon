@@ -27,12 +27,12 @@ The Incident Tracker is a lightweight, responsive system designed to log, track,
 - **Filters:** Built UI controls for Status and Severity that trigger server-side filtering via API query params.
 - **Status Actions:** Built dynamic buttons that only allow valid status transitions (e.g., hiding the 'Investigating' button if the incident is already 'Resolved').
 
-### 🚀 Phase 3: Stretch Goals (Partially Completed for Bonus Credit)
-- ❌ 3.1 Analytics Endpoint: Not implemented (prioritized core stability and Audit Log).
-- ✅ **3.2 Audit Log: COMPLETED.** Added an `incident_audit_log` table to record every status change with a timestamp and actor. Integrated into the Detail View to show a clear history timeline.
-- ❌ 3.3 Pagination: Not implemented.
-- ❌ 3.4 Tests: Not implemented.
-- ❌ 3.5 Real-time Updates: Not implemented.
+### 🚀 Phase 3: Stretch Goals (100% Completed for Bonus Credit)
+- ✅ **3.1 Analytics Endpoint:** Added an `/incidents/analytics` API that groups incidents by severity, status, and calculates avg resolution time. Displayed using a new "Analytics" page on the frontend with `recharts`.
+- ✅ **3.2 Audit Log:** Added an `incident_audit_log` table to record every status change with a timestamp and actor. Integrated into the Detail View to show a clear history timeline.
+- ✅ **3.3 Pagination:** Added `page` and `page_size` params to the list endpoint. The frontend dashboard now utilizes a Material UI `<Pagination>` control for seamless navigation.
+- ✅ **3.4 Tests:** Wrote a `test_main.py` suite using `pytest` covering CRUD operations and strict status-transition logic testing.
+- ✅ **3.5 Real-time Updates:** Integrated FastAPI WebSockets on `/ws/incidents`. The frontend connects to this websocket and automatically fetches the latest incidents instantly upon any creation or status update without requiring a manual refresh.
 
 ---
 

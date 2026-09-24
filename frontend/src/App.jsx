@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { CssBaseline, Container, AppBar, Toolbar, Typography } from '@mui/material';
 import Dashboard from './pages/Dashboard';
 import IncidentDetail from './pages/IncidentDetail';
+import Analytics from './pages/Analytics';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/incident/:id" element={<IncidentDetail />} />
+          <Route path="/analytics" element={<Analytics />} />
         </Routes>
       </Container>
     </BrowserRouter>
