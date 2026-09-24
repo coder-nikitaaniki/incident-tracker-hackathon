@@ -3,7 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
-from schemas import IncidentCreate, IncidentUpdate, IncidentStatusUpdate, IncidentOut
+from schemas import IncidentCreate, IncidentUpdate, IncidentStatusUpdate
 from database import get_db_connection
 from datetime import datetime, timezone
 
@@ -121,7 +121,7 @@ def get_incidents(
     sort_by: Optional[str] = Query("created_at", pattern="^(created_at|severity)$"),
     order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1)
+    page_size: int = Query(10, ge=1, le=100)
 ):
     conn = get_db_connection()
     if not conn:
@@ -197,9 +197,12 @@ def get_analytics():
         cursor.execute("SELECT date(created_at) as date, COUNT(*) as count FROM Incidents GROUP BY date(created_at) ORDER BY date(created_at) DESC LIMIT 7")
         daily_counts = [dict(row) for row in cursor.fetchall()]
 
+        # Avg Resolution time (in hours) for closed incidents using audit log
         cursor.execute("""
-            SELECT AVG((julianday(updated_at) - julianday(created_at)) * 24) as avg_hours
-            FROM Incidents WHERE status = 'Closed'
+            SELECT AVG((julianday(l.changed_at) - julianday(i.created_at)) * 24) as avg_hours
+            FROM Incidents i
+            JOIN incident_audit_log l ON i.id = l.incident_id
+            WHERE i.status = 'Closed' AND l.new_status = 'Closed'
         """)
         avg_res = cursor.fetchone()
         avg_resolution_hours = round(avg_res[0], 2) if avg_res and avg_res[0] else 0

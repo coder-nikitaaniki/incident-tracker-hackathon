@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class IncidentBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200, json_schema_extra={"strip_whitespace": True})
+    title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     severity: str
     assigned_to: Optional[str] = None
@@ -24,7 +24,7 @@ class IncidentBase(BaseModel):
         return v
 
 class IncidentCreate(IncidentBase):
-    reported_by: str = Field(..., min_length=1, json_schema_extra={"strip_whitespace": True})
+    reported_by: str = Field(..., min_length=1)
 
 class IncidentUpdate(IncidentBase):
     pass
@@ -32,13 +32,3 @@ class IncidentUpdate(IncidentBase):
 class IncidentStatusUpdate(BaseModel):
     status: str
     actor: str = Field(default="System User")
-
-class IncidentOut(IncidentBase):
-    id: int
-    status: str
-    reported_by: str
-    created_at: datetime
-    updated_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
